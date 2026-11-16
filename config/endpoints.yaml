@@ -1,0 +1,8 @@
+# Public certificate metadata only. Do not place credentials, tokens, or private keys here.
+endpoints:
+  - name: Example TLS Endpoint
+    host: example.com
+    port: 443
+    environment: test
+    service: example
+    enabled: true

@@ -1,0 +1,25 @@
+# Publish the image with the included GitHub Actions workflow first.
+# Set CERTWATCH_IMAGE in Portainer stack environment to your GHCR image URL.
+services:
+  certwatch:
+    image: ${CERTWATCH_IMAGE:?Set CERTWATCH_IMAGE to ghcr.io/OWNER/certwatch:latest}
+    restart: unless-stopped
+    ports:
+      - "${CERTWATCH_BIND_ADDRESS:-127.0.0.1}:${CERTWATCH_PORT:-8080}:8080"
+    environment:
+      CERTWATCH_DB: /data/certwatch.db
+      CERTWATCH_SCAN_INTERVAL_HOURS: ${CERTWATCH_SCAN_INTERVAL_HOURS:-24}
+      CERTWATCH_TIMEOUT_SECONDS: ${CERTWATCH_TIMEOUT_SECONDS:-10}
+      CERTWATCH_ENDPOINTS_JSON: ${CERTWATCH_ENDPOINTS_JSON:-'{"endpoints":[]}'}
+    volumes:
+      - certwatch-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  certwatch-data:
