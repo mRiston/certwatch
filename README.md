@@ -1,59 +1,80 @@
 # CertWatch
 
-A lightweight, read-only TLS leaf-certificate inventory and dashboard. FastAPI + SQLite, packaged for Docker and Portainer.
+CertWatch is a Portainer-ready, read-only TLS certificate inventory with a FastAPI dashboard, scheduled scanning, and persistent SQLite configuration.
 
-## Features
+## V0.2 highlights
 
-- TLS/SNI leaf certificate inventory for configured TCP endpoints
-- Expiry dashboard and JSON API, with SQLite scan history
-- Scheduled scans and manual scan button
-- Runs as a non-root user with a read-only root filesystem
-- Certificate verification is **intentionally disabled** to inventory expired and private-CA certificates. **This is not a TLS trust validation tool.**
+- New **Configuration** page at `/configuration`
+- Add, enable/disable, and remove monitored hosts without editing YAML
+- Add and update non-secret runtime variables
+- Persistent endpoint, variable, scan, and audit data in `/data/certwatch.db`
+- Optional application-level DNS servers for internal zones
+- Categorized DNS, TCP, TLS, and parsing failures
+- Explicit response allowlists; no environment dump or raw config routes
+- Secret-like variable names and common key/token formats are rejected
 
-## Deploy with GitHub + Portainer
+## Portainer deployment
 
-1. Create a GitHub repository and push these files to its `main` branch. The included GitHub Actions workflow builds and publishes `ghcr.io/OWNER/REPO:latest` on each push.
-2. In GitHub, check **Actions** for a successful build. Make the GHCR package public, or configure registry credentials in Portainer for a private image.
-3. In Portainer, **Stacks → Add stack → Repository**. Provide the repository URL, branch `main`, and Compose path `compose.yaml`.
-4. In the stack environment, set `CERTWATCH_IMAGE` to your actual image path (e.g. `ghcr.io/OWNER/REPO:latest`). Set `CERTWATCH_ENDPOINTS_JSON` to a JSON object containing an `endpoints` array. Optionally set bind address, port, timeout, and interval; see `.env.example`.
-5. Deploy the stack. By default it binds to `127.0.0.1:8080` **on the Docker host**, not your laptop. To reach it remotely, use a trusted host interface IP and restrict access with firewall/reverse-proxy authentication.
-6. To update, push to `main`, wait for the image build, then pull/redeploy the Portainer stack. Git polling alone does not guarantee an updated image is pulled; use Portainer's image pull/redeploy option or a pinned SHA tag.
+1. In Portainer, create or update a standalone Docker Compose stack from this repository.
+2. Use `compose.yaml`.
+3. Keep the named volume `certwatch-data` when updating or recreating the stack.
+4. Deploy and open `http://PORTAINER-HOST:8080`.
+5. Open **Configuration** to add monitored hosts and runtime settings.
 
-### Endpoint configuration
+The Compose-managed `certwatch-data` volume persists `/data/certwatch.db` across container restarts and stack redeployments. Keep this volume when updating the stack. Deleting the volume deletes the configuration and scan history.
 
-Set `CERTWATCH_ENDPOINTS_JSON` in the **Portainer stack environment** (not in a public Git repository):
+## Upgrade behavior
 
-```json
-{"endpoints":[{"name":"Example HTTPS","host":"example.com","port":443,"environment":"test","service":"web","enabled":true}]}
-```
+`config/endpoints.yaml` is now a seed file. It is imported only when the persistent endpoint table is empty. Existing hosts can remain in the file for the first V0.2 startup; after import, manage them through the UI.
 
-For standalone Docker, omit the environment variable to use the bundled `config/endpoints.yaml`, or mount a private YAML file at `/app/config/endpoints.yaml` read-only. Environment JSON takes precedence over YAML.
+If an earlier deployment already used a volume mounted at `/data`, retain that same volume and the same Portainer stack name. If it used a bind mount, change the Compose volume declaration to point at the existing data path before deploying. If you intentionally remove and recreate the stack, select or declare the existing volume rather than creating a new one.
 
-### Local build
+## Built-in runtime variables
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `SCAN_INTERVAL_MINUTES` | `1440` | Automatic scan cadence |
+| `CONNECT_TIMEOUT_SECONDS` | `5` | DNS/TCP/TLS timeout |
+| `WARNING_DAYS` | `60` | Warning threshold |
+| `CRITICAL_DAYS` | `14` | Critical threshold |
+| `DNS_SERVERS` | blank | Comma-separated DNS server IPs, e.g. `10.0.0.10,10.0.0.11` |
+| `RUN_SCAN_ON_STARTUP` | `true` | Run a scan after application startup |
+
+When `DNS_SERVERS` is populated, CertWatch resolves A/AAAA records against those servers and still uses the configured hostname for TLS SNI. This allows internal DNS to be changed from the UI without recreating the container.
+
+For upgrade compatibility, `compose.yaml` maps the existing Portainer `DNS_PRIMARY` and `DNS_SECONDARY` stack variables into a one-time `DNS_SERVERS` seed. They are copied only while the persisted `DNS_SERVERS` value is blank; later UI changes remain authoritative.
+
+Custom non-secret variables are also persisted for future integrations, but have no application behavior until code explicitly consumes them.
+
+## Local development
 
 ```bash
-docker build -t certwatch:local .
-docker run --rm -p 127.0.0.1:8080:8080 -e CERTWATCH_ENDPOINTS_JSON='{"endpoints":[{"host":"example.com"}]}' -v certwatch-data:/data certwatch:local
-curl -fsS http://127.0.0.1:8080/health
-curl -fsS http://127.0.0.1:8080/api/v1/certificates
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+CERTWATCH_DB_PATH=./certwatch.db \
+CERTWATCH_CONFIG_FILE=./config/endpoints.yaml \
+uvicorn app.main:app --reload --port 8080
 ```
 
-### Security notes
+Run tests:
 
-There is **no application authentication**. Restrict dashboard and API access, including `POST /api/v1/scan`, to a trusted network or authenticated reverse proxy. Hostnames, certificate subjects, and scan history can be sensitive. Do not put passwords, private keys, or tokens in endpoint configuration. Only scan hosts you are authorized to reach. Scans are sequential; for large inventories, consider a queue and per-host concurrency limits.
+```bash
+pytest -q
+```
 
-### Known limitations
+## API routes
 
-- Only the presented leaf certificate is collected; chain trust and hostname matching are not evaluated.
-- Certificate status is based on expiry (expired, critical ≤14 days, warning ≤60 days, healthy) or reachability.
-- Existing records for removed endpoints remain visible until manually pruned from the database.
-- One app process is expected. Multiple workers or replicas can duplicate scheduled jobs.
-- No built-in alerting or authentication.
-- JSON endpoints configured through Portainer are environment configuration, not encrypted secrets.
-
-### API
-
-- `GET /health`
 - `GET /api/v1/certificates`
-- `GET /api/v1/history/{host:port}`
-- `POST /api/v1/scan` (202 accepted, 409 if scan is in progress)
+- `POST /api/v1/scans`
+- `GET|POST /api/v1/config/endpoints`
+- `PATCH|DELETE /api/v1/config/endpoints/{id}`
+- `GET|POST /api/v1/config/variables`
+- `PUT|DELETE /api/v1/config/variables/{id}`
+- `GET /health`
+
+The API intentionally does not expose raw environment variables, raw YAML, or audit-log contents.
+
+## Security
+
+There is no built-in authentication. Keep the service on a trusted management network and read [SECURITY.md](SECURITY.md). Internal hostnames, certificate subjects, SANs, issuers, and fingerprints are infrastructure metadata even though they are not credentials.

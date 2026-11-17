@@ -1,1 +1,43 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CertWatch</title><style>body{font-family:system-ui;margin:0;background:#0b1220;color:#e5e7eb}.wrap{max-width:1200px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:20px 0}.card,.panel{background:#172033;border:1px solid #314057;border-radius:12px;padding:16px}.n{font-size:30px;font-weight:800}.muted{color:#9ca3af}button{background:#2563eb;color:white;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #314057;font-size:14px}.healthy{color:#4ade80}.warning{color:#facc15}.critical,.expired{color:#fb7185}.unreachable{color:#94a3b8}@media(max-width:760px){.panel{overflow:auto}.top{align-items:flex-start;flex-direction:column}}</style></head><body><main class="wrap"><div class="top"><div><h1>CertWatch</h1><div class="muted">Read-only TLS certificate inventory</div></div><button id="scan">Scan now</button></div><section class="cards">{% for s in ['healthy','warning','critical','expired','unreachable'] %}<div class="card"><div class="muted">{{s|title}}</div><div class="n {{s}}">{{counts[s]}}</div></div>{% endfor %}</section><section class="panel"><table><thead><tr><th>Endpoint</th><th>Environment</th><th>Service</th><th>Expires</th><th>Days</th><th>Status</th><th>Last scan</th></tr></thead><tbody>{% for r in rows %}<tr><td><strong>{{r.name}}</strong><br><span class="muted">{{r.host}}:{{r.port}}</span></td><td>{{r.environment}}</td><td>{{r.service}}</td><td>{{r.not_after or 'Unavailable'}}</td><td>{{r.days_remaining if r.days_remaining is not none else '—'}}</td><td class="{{r.status}}">{{r.status|title}}</td><td>{{r.scanned_at}}</td></tr>{% else %}<tr><td colspan="7">Initial scan pending.</td></tr>{% endfor %}</tbody></table></section></main><script>document.getElementById('scan').addEventListener('click',async(event)=>{const b=event.currentTarget;b.disabled=true;b.textContent='Scan queued';await fetch('/api/v1/scan',{method:'POST'});setTimeout(()=>location.reload(),2500)});</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CertWatch</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/dashboard.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>CertWatch</h1>
+        <p>Read-only TLS certificate inventory</p>
+      </div>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="/" aria-current="page">Dashboard</a>
+        <a href="/configuration">Configuration</a>
+        <button id="scan-button" type="button">Scan now</button>
+      </nav>
+    </header>
+
+    <section class="cards" aria-label="Certificate summary">
+      <article class="card"><span class="label">Healthy</span><span id="count-healthy" class="value healthy">0</span></article>
+      <article class="card"><span class="label">Warning</span><span id="count-warning" class="value warning">0</span></article>
+      <article class="card"><span class="label">Critical</span><span id="count-critical" class="value critical">0</span></article>
+      <article class="card"><span class="label">Expired</span><span id="count-expired" class="value expired">0</span></article>
+      <article class="card"><span class="label">Unreachable</span><span id="count-unreachable" class="value unreachable">0</span></article>
+    </section>
+
+    <section class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Endpoint</th><th>Environment</th><th>Service</th><th>Expires</th><th>Days</th><th>Status</th><th>Last scan</th></tr></thead>
+          <tbody id="certificate-rows"><tr><td colspan="7" class="empty">Loading certificate inventory…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,28 +1,34 @@
-# Publish the image with the included GitHub Actions workflow first.
-# Set CERTWATCH_IMAGE in Portainer stack environment to your GHCR image URL.
 services:
   certwatch:
-    image: ${CERTWATCH_IMAGE:?Set CERTWATCH_IMAGE to ghcr.io/OWNER/certwatch:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: certwatch
     restart: unless-stopped
     ports:
-      - "${CERTWATCH_BIND_ADDRESS:-127.0.0.1}:${CERTWATCH_PORT:-8080}:8080"
+      - "${CERTWATCH_PORT:-8080}:8080"
     environment:
-      CERTWATCH_DB: /data/certwatch.db
-      CERTWATCH_SCAN_INTERVAL_HOURS: ${CERTWATCH_SCAN_INTERVAL_HOURS:-24}
-      CERTWATCH_TIMEOUT_SECONDS: ${CERTWATCH_TIMEOUT_SECONDS:-10}
-      CERTWATCH_ENDPOINTS_JSON: ${CERTWATCH_ENDPOINTS_JSON:-'{"endpoints":[]}'}
+      CERTWATCH_DB_PATH: /data/certwatch.db
+      CERTWATCH_CONFIG_FILE: /app/config/endpoints.yaml
+      CERTWATCH_DNS_PRIMARY: "${DNS_PRIMARY:-}"
+      CERTWATCH_DNS_SECONDARY: "${DNS_SECONDARY:-}"
+      TZ: "${TZ:-America/New_York}"
     volumes:
       - certwatch-data:/data
+      - ./config:/app/config:ro
     read_only: true
-    dns:
-      - ${DNS_PRIMARY:-1.1.1.1}
-      - ${DNS_SECONDARY:-8.8.8.8}
     tmpfs:
-      - /tmp:size=16m,noexec,nosuid,nodev
+      - /tmp:rw,noexec,nosuid,size=32m
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   certwatch-data:

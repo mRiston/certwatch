@@ -1,8 +1,5 @@
-# Public certificate metadata only. Do not place credentials, tokens, or private keys here.
-endpoints:
-  - name: Example TLS Endpoint
-    host: example.com
-    port: 443
-    environment: test
-    service: example
-    enabled: true
+# This file is imported only when the persistent endpoint table is empty.
+# After first startup, manage monitored hosts from the Configuration page.
+# Existing deployments can keep their current endpoint entries here for the
+# first V0.2 startup; new deployments can start with this empty list.
+endpoints: []
